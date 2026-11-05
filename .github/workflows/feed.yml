@@ -1,0 +1,66 @@
+name: feed
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**.md'
+      - '**.php'
+      - '.*rc'
+      - '.github/**.yaml'
+      - '.github/**.yml'
+  pull_request:
+    paths:
+      - '**.md'
+      - '**.php'
+      - '.*rc'
+      - '.github/**.yaml'
+      - '.github/**.yml'
+
+jobs:
+  feed:
+    name: feed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+        env:
+          COMPOSER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          # Use composer.json for key, if composer.lock is not committed.
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          # key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Run composer install
+        run: composer install --no-interaction --ansi -v
+
+      - name: Run npm install
+        run: npm install -g autocorrect-node @lint-md/cli zhlint
+
+      - name: Fix README.md
+        run: composer php-cs-fixer:custom-fix
+
+      - name: Generate feed
+        run: composer artisan:feed:generate
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_options: '--no-verify'
+          commit_message: 'Update feed'
+          file_pattern: '**.atom **.rss README.md'
